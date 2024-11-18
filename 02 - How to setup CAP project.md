@@ -54,5 +54,5 @@ npm run deploy
 
 # Links
 
-https://github.com/aashishksahu/SAP-BTP-Notes/blob/main/Approuter%20Configuration%20-%20SAP%20Community.pdf
+[Approuter Configuration - SAP Community.pdf](https://github.com/aashishksahu/SAP-BTP-Notes/blob/caf4ed13b49a358abd431a1f9f0b258cc2239629/Res/Approuter%20Configuration%20-%20SAP%20Community.pdf)
 
