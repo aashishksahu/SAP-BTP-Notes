@@ -1,0 +1,219 @@
+_schema-version: "3.1"
+ID: stuff
+description: A fitting description.
+version: 1.0.0
+
+# Use the section below to run shell commands before initiating build
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - rm -rf resources/
+        - npm ci
+        - npx cds build --production
+
+modules:
+  # This is the main application service (will be reffered as CAPM backend service from here on)
+  - name: stuff-srv
+    type: nodejs
+    path: gen/srv
+    # All the resources that are needed to use the application will be mentioned below 
+    requires:
+      - name: stuff-auth                 # XSUAA authentication resource
+      - name: stuff-db                   # HANA Cloud Database
+      - name: stuff-destination-service  # Fiori apps can use the destinations here to call apis of the CAPM backend service
+      # - name: job-schedule-mdg           # Background jobs scheduling service
+      - name: stuff-connectivity         # Used for connecting to on-premise systems
+      - name: stuff-logs                 # For application logs that can be viewed in the CAPM backend service overview in BTP cockpit  
+    provides:
+      - name: srv-api                    # srv-api is like an endpoint of the CAPM backend, it is used at multiple places to represent the backend service
+        properties:
+          srv-url: "${default-url}"
+    parameters:
+      buildpack: nodejs_buildpack
+      readiness-health-check-http-endpoint: /health
+      readiness-health-check-type: http
+    build-parameters:
+      builder: npm
+      ignore:                            # Add this to remove node_modules from the build mtar archive
+        - node_modules/
+  
+  # db-deployer module is used to deploy database artifacts including cds entities and views 
+  # as well as native hana artifacts such as calculation views
+  - name: stuff-db-deployer
+    type: hdb
+    path: gen/db
+    requires:
+      - name: stuff-db
+    parameters:
+      buildpack: nodejs_buildpack
+    build-parameters:
+      builder: npm
+      ignore:                            # Add this to remove node_modules from the build mtar archive
+        - node_modules/
+
+  # The following module is used to managing content
+  # resources (like HTML5 or UI content) in a cloud environment
+  - name: stuff-dest-content
+    type: com.sap.application.content
+    requires:
+      - name: stuff-destination-service # know more about this in the resources section
+        parameters:
+          content-target: true
+      - name: stuff-repo-host           # know more about this in the resources section
+        parameters:
+          service-key:
+            name: stuff-repo-host-key
+      - name: stuff-auth                # know more about this in the resources section
+        parameters:
+          service-key:
+            name: stuff-auth-key
+    parameters:
+      content:
+        instance:
+          destinations:
+            - Name: stuff_repo_host                    # repository for the html5 apps 
+              ServiceInstanceName: stuff-html5-srv
+              ServiceKeyName: stuff-repo-host-key
+              sap.cloud.service: stuff
+            - Authentication: OAuth2UserTokenExchange  # allows the authentication bearer token to flow to the CAPM backend service
+              Name: stuff_uaa
+              ServiceInstanceName: stuff-xsuaa-srv
+              ServiceKeyName: stuff-auth-key
+              sap.cloud.service: stuff
+          existing_destinations_policy: update
+    build-parameters:
+      no-source: true
+  
+  # This module is used to build and manage the fiori applications under the app/ folder    
+  - name: stuff-app-content
+    type: com.sap.application.content
+    path: .
+    requires:
+    - name: stuff-repo-host
+      parameters:
+        content-target: true
+    build-parameters:
+      build-result: resources
+      requires:
+      - artifacts:
+        - project3.zip
+        name: project3
+        target-path: resources/
+  - name: project3
+    type: html5
+    path: app/project3
+    build-parameters:
+      build-result: dist
+      builder: custom
+      commands:
+      - npm install
+      - npm run build:cf
+      supported-platforms: []
+
+  # This is a managed approuter which is used to show fiori applications in the 
+  # HTML5 apps sections in BTP cockpit, requires subscription of SAP Build Workzone or Portal service
+  - name: stuff-approuter
+    path: app/router      # location of the router generated using the "add router" wizard 
+    type: approuter.nodejs
+    properties:
+      httpHeaders: '[{ "X-Content-Type-Options": "nosniff" },{ "Referrer-Policy": "strict-origin-when-cross-origin" }, {"Content-Security-Policy":"default-src ''self'' *.sap.com *.hana.ondemand.com;script-src ''self'' *.sap.com *.hana.ondemand.com ''unsafe-eval'';"}]' # ''unsafe-eval'' is not recommended due to security reasons, avoid use
+    parameters:
+      keep-existing-routes: true
+      disk-quota: 512M
+      memory: 512M
+    requires:
+      - name: srv-api
+        group: destinations
+        properties:
+          name: stuff-srv-api
+          url: "~{srv-url}"
+          forwardAuthToken: true
+      - name: stuff-auth
+resources:
+  # XSUAA service instance
+  - name: stuff-auth
+    type: org.cloudfoundry.managed-service
+    parameters:
+      config:
+        tenant-mode: dedicated
+        xsappname: stuff
+      path: ./xs-security.json
+      service: xsuaa
+      service-name: stuff-xsuaa-srv
+      service-plan: application
+
+  # HANA Cloud HDI container service instance
+  - name: stuff-db
+    type: com.sap.xs.hdi-container
+    parameters:
+      service: hana
+      service-plan: hdi-shared
+    properties:
+      hdi-container-name: "${service-name}"
+
+  # this resource is used to make connections to CAPM backend from a fiori application
+  - name: stuff-destination-service
+    type: org.cloudfoundry.managed-service
+    parameters:
+      config:
+        HTML5Runtime_enabled: true  # keep this true to see the apps in the HTML5 apps section in BTP cockpit
+        init_data:
+          instance:
+            destinations:
+              - Authentication: NoAuthentication
+                HTML5.DynamicDestination: true
+                HTML5.ForwardAuthToken: true
+                Name: stuff-srv-api     # use this destination in xs-app.json files of all fiori apps and approuter
+                ProxyType: Internet
+                Type: HTTP
+                URL: "~{srv-api/srv-url}"
+                webIDEAdditionalData: full_url
+                webIDEEnabled: true
+                webIDEUsage: odata_gen
+              - Authentication: NoAuthentication
+                Name: ui5
+                ProxyType: Internet
+                Type: HTTP
+                URL: "https://ui5.sap.com"
+            existing_destinations_policy: update
+        version: 1.0.0
+      service: destination
+      service-name: stuff-destination-service
+      service-plan: lite
+    requires:   # this is a requirement as srv-api is being used in the destinations defined above
+      - name: srv-api
+
+  # Service instance responsible to host and manage HTML5 apps (fiori apps) 
+  - name: stuff-repo-host
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: html5-apps-repo
+      service-name: stuff-html5-srv
+      service-plan: app-host
+
+  # Job scheduling service instance
+  # - name: job-schedule-mdg
+  #   type: com.sap.xs.job-scheduler
+  #   description: Job Scheduler Service
+  #   parameters:
+  #     service: jobscheduler
+  #     service-plan: standard
+
+  # Connectivity service instance (needed for on-premise system connectivity)
+  - name: stuff-connectivity
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: connectivity
+      service-plan: lite
+
+  # Application logs service instance 
+  - name: stuff-logs
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service-name: stuff-logs
+      service: application-logs
+      service-plan: lite
+parameters:
+  deploy_mode: html5-repo
+  enable-parallel-deployments: true
