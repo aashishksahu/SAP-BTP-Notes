@@ -33,17 +33,17 @@
 ### Create a SAP Fiori application
 
 1. Open the command palette `View` -> `Find Command` -> `Fiori: Open Application Generator`
-
-2. Module name: uniquemodulename (make sure its unique in your organisation)
-
-3. Namespace: com.hostname
-
-4. Select `Yes` to `Add deployment configuration`, ensuring the newly generated MTA file is selected, refer to next step `Target Name`
-
-5. Select `Yes` to `Add FLP configuration`, refer to next step `Overwrite` for input params, this is required for Launchpad to show your application tile
-
-6. Follow the next steps and complete the wizard
-
+2. Select a template
+   ![image](https://github.com/user-attachments/assets/953380c2-57c5-41b1-abba-d54d3108c2de)
+3. Select appropriate data source
+   ![image](https://github.com/user-attachments/assets/95a7d176-422e-49e8-960e-570be1d3c220)
+4. Select appropriate entity
+   ![image](https://github.com/user-attachments/assets/99a06e6d-8a0c-4823-9c46-3be0968407a3)
+5. Select project attributes, select the options (highlighted below in yellow) to add MTA deployment config and Fiori Launchpad config
+   <img width="923" alt="image" src="https://github.com/user-attachments/assets/32a6e05f-8d4a-4186-95b6-dc14fa38ae23">
+6. Select an appropriate destination (**Note:** Wait for some time for all destinations to show up, don't select DIRECT_SERVICE_BINDING)
+   ![image](https://github.com/user-attachments/assets/519bc46e-a08d-4400-b5cb-1538fd1b8d84)
+7. Fill out the details for Fiori Launchpad config and finish
 
 ### Deploy the project
 
